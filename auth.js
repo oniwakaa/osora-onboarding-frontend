@@ -21,26 +21,41 @@ const msalConfig = {
 // Inizializza la libreria MSAL
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 
-// Funzione chiamata quando si clicca il pulsante "Accedi"
 async function signIn() {
     const loginRequest = {
-        // Chiediamo i permessi minimi per leggere il profilo utente
         scopes: ["User.Read", "openid", "profile"]
     };
 
     try {
         console.log("Provo ad effettuare il login...");
-        // Apre la finestra popup di Microsoft per il login
         const loginResponse = await msalInstance.loginPopup(loginRequest);
-        // Se il login ha successo, imposta l'utente come "attivo" per questa sessione
+        // Login riuscito, imposta l'account attivo
         msalInstance.setActiveAccount(loginResponse.account);
-        console.log("Login riuscito! Account:", loginResponse.account);
-        // Manda l'utente alla pagina successiva
-        window.location.href = "/onboarding.html";
+        console.log("Login successful! Account:", loginResponse.account);
+
+        // --- Logica di reindirizzamento modificata ---
+        // Ora che l'account è attivo nella sessione MSAL, possiamo navigare
+        // alla pagina successiva o ricaricare se siamo già lì.
+
+        // Controlla se siamo già sulla pagina di onboarding
+        if (window.location.pathname !== "/onboarding.html" && window.location.pathname !== "/onboarding") {
+            // Se siamo su index.html (o altra pagina), vai a onboarding.html
+            console.log("Reindirizzamento a onboarding.html...");
+            window.location.href = "/onboarding.html";
+        } else {
+            // Se siamo GIÀ su onboarding.html (improbabile ma possibile),
+            // un semplice reload rieseguirà la logica di quella pagina
+            // che ora troverà l'account attivo.
+            console.log("Già su onboarding.html, ricarico la pagina...");
+            location.reload();
+        }
+        // --- Fine logica di reindirizzamento modificata ---
+
     } catch (error) {
-        // Se qualcosa va storto durante il login
         console.error("Login fallito:", error);
-        alert("Login fallito. Verifica la console per i dettagli (puoi aprirla con Cmd+Option+J o dal menu Sviluppo del browser).");
+        // Aggiungiamo il codice errore specifico per dare più informazioni all'utente
+        const errorCode = error.errorCode || "N/A";
+        alert(`Login fallito (${errorCode}). Verifica la console per i dettagli.`);
     }
 }
 
