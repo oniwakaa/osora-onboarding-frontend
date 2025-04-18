@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Onboarding App - Step 1</title>
+    </head>
+<body>
+    <h1>Onboarding - Verifica Permessi</h1>
+    <div id="userInfo">
+        <p>Caricamento informazioni utente...</p>
+    </div>
+    <div id="content">
+        <p>Verifica del ruolo amministratore in corso... (Prossimo step)</p>
+    </div>
+
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" integrity="..." crossorigin="anonymous"></script>
+    <script src="auth.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const account = getActiveAccount(); // Funzione definita in auth.js
+
+            if (!account) {
+                console.log("Nessun account attivo. Reindirizzo al login...");
+                // Se l'utente non è loggato, torna alla pagina iniziale
+                window.location.href = "/index.html";
+                return;
+            }
+
+            // Se loggato, mostra info base (esempio)
+            console.log("Account attivo:", account);
+            const userInfoDiv = document.getElementById('userInfo');
+            userInfoDiv.innerHTML = `
+                <p>Bentornato/a, ${account.name || 'Utente'}</p>
+                <p>Account: ${account.username}</p>
+                <p>Tenant ID: ${account.tenantId}</p>
+            `;
+
+            // Il codice per verificare se è admin e mostrare
+            // il pulsante di consenso verrà aggiunto qui nel prossimo step.
+        });
+    </script>
+</body>
+</html>
