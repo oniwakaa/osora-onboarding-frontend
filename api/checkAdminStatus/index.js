@@ -1,6 +1,7 @@
 // api/checkAdminStatus/index.js
 
 module.exports = async function (context, req) {
+    context.log('checkAdminStatus Request Headers:', JSON.stringify(req.headers, null, 2));
     context.log('JavaScript HTTP trigger function processed a request for checkAdminStatus.');
 
     let isAdmin = false; // Default a non admin
