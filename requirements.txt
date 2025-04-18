@@ -1,0 +1,3 @@
+requests         # Libreria per fare chiamate HTTP/API"
+azure-identity   # Libreria per autenticazione Azure"
+azure-appconfiguration # Libreria per leggere da Azure App Configuration"
