@@ -6,7 +6,7 @@
 <body>
     <h1>Benvenuto nell'Onboarding di Osora</h1>
     <p>Accedi con il tuo account Amministratore Microsoft 365 per iniziare.</p>
-    <button onclick="signIn()">Accedi con Account Microsoft 365 Admin</button>
+    <button onclick="location.href='/.auth/login/aad?post_login_redirect_uri=/onboarding.html'">Accedi con Account Microsoft 365 Admin</button>
 
     <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"
         integrity="sha384-..." crossorigin="anonymous"></script>
