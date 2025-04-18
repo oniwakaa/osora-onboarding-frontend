@@ -15,28 +15,114 @@
     <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" integrity="..." crossorigin="anonymous"></script>
     <script src="auth.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const account = getActiveAccount(); // Funzione definita in auth.js
+    // Funzione per avviare il flusso di consenso amministratore
+    function triggerAdminConsentFlow() {
+        console.log("Avvio flusso consenso amministratore...");
+        const account = getActiveAccount(); // Recupera l'account loggato
+        if (!account) {
+            alert("Errore: account utente non trovato.");
+            return;
+        }
 
-            if (!account) {
-                console.log("Nessun account attivo. Reindirizzo al login...");
-                // Se l'utente non è loggato, torna alla pagina iniziale
-                window.location.href = "/index.html";
-                return;
+        const tenantId = account.tenantId;
+        const clientId = msalConfig.auth.clientId; // Preso da auth.js (msalConfig deve essere accessibile)
+        // L'URI dove tornare DOPO il consenso (deve essere registrato in Azure AD)
+        // Usiamo la stessa pagina di onboarding come ritorno
+        const redirectUri = window.location.origin + "/onboarding.html";
+
+        // Genera un valore 'state' casuale per sicurezza (previene CSRF)
+        const state = crypto.randomUUID(); // Metodo moderno per generare UUID
+        sessionStorage.setItem('consentState', state); // Salva lo stato per verificarlo al ritorno
+
+        // Costruisci l'URL per il consenso amministratore
+        const consentUrl = `https://login.microsoftonline.com/<span class="math-inline">\{tenantId\}/adminconsent?client\_id\=</span>{clientId}&state=<span class="math-inline">\{state\}&redirect\_uri\=</span>{encodeURIComponent(redirectUri)}`;
+
+        console.log("Reindirizzamento a:", consentUrl);
+        // Reindirizza l'utente alla pagina di consenso di Azure AD
+        window.location.href = consentUrl;
+    }
+
+    // Esegui al caricamento completo del DOM della pagina
+    document.addEventListener('DOMContentLoaded', async () => {
+        console.log("onboarding.html DOMContentLoaded");
+        const account = getActiveAccount(); // Funzione definita in auth.js
+        const userInfoDiv = document.getElementById('userInfo');
+        const contentDiv = document.getElementById('content');
+
+        if (!account) {
+            console.log("Nessun account attivo trovato, reindirizzamento al login.");
+            window.location.href = "/index.html";
+            return; // Interrompe l'esecuzione
+        }
+
+        // Utente loggato, mostra le informazioni base
+        console.log("Account attivo trovato:", account);
+        userInfoDiv.innerHTML = `
+            <p>Bentornato/a, ${account.name || 'Utente'}</p>
+            <p>Account: ${account.username}</p>
+            <p>Tenant ID: ${account.tenantId}</p>
+        `;
+
+        // ---- NUOVA PARTE: Chiamata all'API Backend ----
+        contentDiv.innerHTML = "<p>Verifica del ruolo amministratore in corso...</p>"; // Messaggio temporaneo
+
+        try {
+            console.log("Chiamata a /api/checkAdminStatus...");
+            // NOTA: Non serve un token di accesso qui perché ci affidiamo
+            // all'autenticazione gestita dalla piattaforma Static Web Apps
+            // che inietta l'header x-ms-client-principal nella richiesta alla funzione.
+            const response = await fetch('/api/checkAdminStatus'); // Chiamata GET relativa
+
+            console.log("Risposta API ricevuta, Status:", response.status);
+
+            if (!response.ok) {
+                 // Se la risposta non è OK (es: 401, 500)
+                 let errorText = `Errore API: ${response.statusText}`;
+                 try { // Prova a leggere il corpo dell'errore se c'è
+                     const errorBody = await response.text();
+                     errorText += ` - ${errorBody}`;
+                 } catch(e) { /* ignora se non c'è corpo */}
+                 throw new Error(errorText);
             }
 
-            // Se loggato, mostra info base (esempio)
-            console.log("Account attivo:", account);
-            const userInfoDiv = document.getElementById('userInfo');
-            userInfoDiv.innerHTML = `
-                <p>Bentornato/a, ${account.name || 'Utente'}</p>
-                <p>Account: ${account.username}</p>
-                <p>Tenant ID: ${account.tenantId}</p>
-            `;
+            const data = await response.json(); // Estrae il corpo JSON della risposta
+            console.log("Dati API ricevuti:", data);
 
-            // Il codice per verificare se è admin e mostrare
-            // il pulsante di consenso verrà aggiunto qui nel prossimo step.
-        });
+            // Aggiorna la UI in base alla risposta
+            contentDiv.innerHTML = ''; // Pulisce il messaggio di attesa
+
+            if (data.isAdmin) {
+                console.log("L'utente è un amministratore.");
+                // Crea il pulsante per il consenso
+                const consentButton = document.createElement('button');
+                consentButton.id = 'consentButton';
+                consentButton.textContent = 'Concedi Permessi Applicazione';
+                // Aggiunge l'azione al click del pulsante
+                consentButton.addEventListener('click', triggerAdminConsentFlow);
+
+                const infoParagraph = document.createElement('p');
+                infoParagraph.textContent = "Sei stato verificato come amministratore. Per continuare, concedi i permessi richiesti all'applicazione per accedere ai dati necessari nel tuo tenant Microsoft 365.";
+
+                contentDiv.appendChild(infoParagraph);
+                contentDiv.appendChild(consentButton);
+
+            } else {
+                console.log("L'utente NON è un amministratore.");
+                // Mostra il messaggio per utenti non admin
+                contentDiv.innerHTML = `
+                    <p><strong>Privilegi Amministrativi Richiesti</strong></p>
+                    <p>L'account con cui hai effettuato l'accesso (${account.username}) non dispone dei privilegi amministrativi necessari (es: Amministratore Globale, Amministratore Applicazione) per concedere le autorizzazioni richieste a questa applicazione per conto della tua organizzazione.</p>
+                    <p>Per favore, contatta un amministratore del tuo tenant Microsoft 365 per completare questo processo di onboarding.</p>
+                `;
+            }
+
+        } catch (error) {
+            console.error("Errore durante la chiamata a /api/checkAdminStatus o nell'aggiornamento UI:", error);
+            contentDiv.innerHTML = `<p style="color: red;">Si è verificato un errore durante la verifica dei permessi. Riprova più tardi o contatta il supporto. Dettagli: ${error.message}</p>`;
+        }
+        // ---- FINE NUOVA PARTE ----
+    });
+</script>
     </script>
 </body>
 </html>
