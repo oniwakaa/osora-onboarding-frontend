@@ -3,7 +3,7 @@
 // Importa le librerie necessarie (basato sul tuo package.json e descrizione)
 const { DefaultAzureCredential } = require("@azure/identity");
 const { Client } = require("@microsoft/microsoft-graph-client");
-require("isomorphic-fetch"); // Polyfill per fetch richiesto da graph-client
+require("isomorphic-fetch");// Polyfill per fetch richiesto da graph-client
 
 // Definisci gli ID Template dei ruoli amministratore che vuoi controllare
 // Questi sono esempi comuni, aggiungi/rimuovi a seconda delle tue necessità
@@ -79,17 +79,16 @@ module.exports = async function (context, req) {
     // 2. Tenta di ottenere il token per Microsoft Graph usando l'Identità Gestita
     //    (Questa è la parte che attualmente fallisce e che stiamo diagnosticando)
     try {
-        context.log("Tentativo di ottenere le credenziali tramite DefaultAzureCredential...");
-        // Utilizzo il codice che hai indicato come causa del problema,
-        // specificando esplicitamente il Client ID della Managed Identity
-        const credential = new DefaultAzureCredential({
-             managedIdentityClientId: "1877d094-1a3c-4efc-bdfd-4c894cfa2a53" // Client ID della MI Assegnata dal Sistema della SWA
-        });
-        context.log(`Credenziale creata con MI Client ID: 1877d094-1a3c-4efc-bdfd-4c894cfa2a53`);
+        context.log("Attempting to get credential using DefaultAzureCredential without explicit ID...");
+        const credential = new DefaultAzureCredential(); // <--- MODIFICA QUI
+    
+        context.log("Attempting to get token...");
+        const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
+        context.log("Successfully obtained token.");
 
         context.log("Tentativo di ottenere il token per Microsoft Graph (scope: .default)...");
-        // L'errore si verifica qui
-        const graphToken = await credential.getToken("https://graph.microsoft.com/.default");
+        // Use the already obtained token instead of making a duplicate call
+        const graphToken = tokenResponse;
 
         // Se arriviamo qui (improbabile dato l'errore attuale), il token è stato ottenuto
         context.log("Token per Microsoft Graph ottenuto con successo tramite Managed Identity.");
