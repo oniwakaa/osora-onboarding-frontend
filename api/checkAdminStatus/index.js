@@ -1,169 +1,145 @@
-// /api/checkAdminStatus/index.js
+// osora-frontend-backup/api/checkAdminStatus/index.js
 
-// Importa le librerie necessarie (basato sul tuo package.json e descrizione)
-const { DefaultAzureCredential } = require("@azure/identity");
+const { ManagedIdentityCredential } = require("@azure/identity");
 const { Client } = require("@microsoft/microsoft-graph-client");
-require("isomorphic-fetch");// Polyfill per fetch richiesto da graph-client
+// È necessario 'isomorphic-fetch' per fornire un'implementazione di fetch globale
+// che il client Microsoft Graph possa usare in un ambiente Node.js.
+require("isomorphic-fetch");
 
-// Definisci gli ID Template dei ruoli amministratore che vuoi controllare
-// Questi sono esempi comuni, aggiungi/rimuovi a seconda delle tue necessità
-const adminRoleTemplateIds = [
+// ID Template dei ruoli amministratore di Azure AD da controllare
+// Puoi trovare altri ID qui: https://learn.microsoft.com/en-us/azure/active-directory/roles/permissions-reference
+const ADMIN_ROLE_TEMPLATE_IDS = [
     "62e90394-69f5-4237-9190-012177145e10", // Global Administrator
     "fe930be7-5e62-47db-91af-98c3a49a38b1", // SharePoint Administrator
-    "88d8e3e3-8f55-4a1e-953a-9b9898b8876b", // Teams Administrator
+    "29232cdf-9323-42fd-ade2-1d097af3e4de", // Teams Administrator
     "f2ef992c-3afb-46b9-b7cf-a126ee74c451", // Exchange Administrator
-    "e8611ab8-c189-46e8-94e1-60213ab1a814", // User Administrator
-    // ... aggiungi altri ID template se necessario
+    "b0f54661-2d74-4c50-afa3-1ec803f12efe"  // User Administrator
+    // Aggiungi altri ID template se necessario
 ];
 
-module.exports = async function (context, req) {
-    context.log('Funzione checkAdminStatus triggerata.');
+// Client ID dell'Identità Gestita Assegnata dal Sistema della tua Static Web App
+const MANAGED_IDENTITY_CLIENT_ID = "1877d094-1a3c-4efc-bdfd-4c894cfa2a53";
 
-    // --- INIZIO PASSO DIAGNOSTICO: Log delle Variabili d'Ambiente ---
-    context.log("--- LOGGING DELLE VARIABILI D'AMBIENTE (process.env) ---");
-    try {
-        // Usa JSON.stringify per una migliore leggibilità nei log, specialmente in Application Insights
-        // null, 2 formatta l'output JSON con indentazione
-        context.log(JSON.stringify(process.env, null, 2));
-    } catch (stringifyError) {
-        // Fallback nel caso (improbabile) che process.env non sia serializzabile
-        context.log.error("Errore durante la serializzazione di process.env:", stringifyError);
-        context.log("process.env raw:", process.env);
-    }
-    context.log("--- FINE LOGGING VARIABILI D'AMBIENTE ---");
-    // --- FINE PASSO DIAGNOSTICO ---
+module.exports = async function (context, req) {
+    context.log('JavaScript HTTP trigger function processed a request for checkAdminStatus.');
 
     let userId = null;
-    let userDetails = null; // Per loggare il nome utente se disponibile
-    let isAdmin = false; // Valore predefinito
+    let isAdmin = false;
 
-    // 1. Ottieni le informazioni dell'utente dall'header di autenticazione SWA
-    const header = req.headers['x-ms-client-principal'];
-    if (header) {
-        try {
-            const encoded = Buffer.from(header, 'base64');
-            const decoded = encoded.toString('ascii');
-            const clientPrincipal = JSON.parse(decoded);
-
-            // Verifica che le proprietà necessarie esistano
-            if (clientPrincipal && clientPrincipal.userId && clientPrincipal.userDetails) {
-                 userId = clientPrincipal.userId;
-                 userDetails = clientPrincipal.userDetails; // Di solito l'email o il nome
-                 context.log(`Utente autenticato tramite SWA. User ID: ${userId}, User Details: ${userDetails}`);
-            } else {
-                 context.log.warn("Oggetto clientPrincipal non contiene userId o userDetails.");
-                 context.res = { status: 400, body: "Impossibile determinare l'identità utente dall'header." };
-                 return;
-            }
-
-        } catch (e) {
-            context.log.error("Errore durante il parsing dell'header x-ms-client-principal:", e);
-            // Non ritornare l'errore esatto al client per sicurezza
-            context.res = { status: 400, body: "Header di autenticazione malformato." };
-            return;
-        }
-    } else {
-        // L'authLevel è 'anonymous', ma ci aspettiamo che SWA popoli l'header se l'utente è loggato
-        context.log.warn("Header x-ms-client-principal non trovato. L'utente non è autenticato da SWA o la richiesta non proviene dalla SWA?");
-        context.res = { status: 401, body: "Autenticazione utente richiesta." };
+    // 1. Estrai l'ID Utente dall'header x-ms-client-principal iniettato da SWA Auth
+    const clientPrincipalHeader = req.headers['x-ms-client-principal'];
+    if (!clientPrincipalHeader) {
+        context.log.warn("Missing x-ms-client-principal header. User might not be authenticated via SWA Auth.");
+        context.res = {
+            status: 401, // Unauthorized
+            body: { message: "Utente non autenticato." }
+        };
         return;
     }
 
-    // Procedi solo se abbiamo ottenuto un userId
-    if (!userId) {
-         context.log.error("UserID non estratto correttamente."); // Log aggiunto per coerenza
-         context.res = { status: 400, body: "Impossibile determinare l'identità utente." }; // Già gestito sopra, ma doppia sicurezza
-         return;
-    }
-
-    // 2. Tenta di ottenere il token per Microsoft Graph usando l'Identità Gestita
-    //    (Questa è la parte che attualmente fallisce e che stiamo diagnosticando)
     try {
-        context.log("Attempting to get credential using DefaultAzureCredential without explicit ID...");
-        const credential = new DefaultAzureCredential(); // <--- MODIFICA QUI
-    
-        context.log("Attempting to get token...");
+        const header = Buffer.from(clientPrincipalHeader, 'base64').toString('ascii');
+        const clientPrincipal = JSON.parse(header);
+        userId = clientPrincipal.userId; // Questo è l'Object ID (OID) dell'utente in Azure AD
+        context.log(`User OID extracted from header: ${userId}`);
+
+        if (!userId) {
+             throw new Error("UserID not found in client principal.");
+        }
+
+        // 2. Ottieni la credenziale usando l'Identità Gestita Assegnata dal Sistema
+        context.log(`Attempting to get credential using ManagedIdentityCredential with explicit Client ID: ${MANAGED_IDENTITY_CLIENT_ID}`);
+        const credential = new ManagedIdentityCredential(MANAGED_IDENTITY_CLIENT_ID);
+
+        // 3. Ottieni un token di accesso per Microsoft Graph
+        context.log("Attempting to get token for Microsoft Graph scope 'https://graph.microsoft.com/.default'...");
         const tokenResponse = await credential.getToken("https://graph.microsoft.com/.default");
-        context.log("Successfully obtained token.");
+        context.log("Successfully obtained Graph token using Managed Identity.");
+        // Non loggare il token stesso per motivi di sicurezza! context.log(`Token: ${tokenResponse.token}`);
 
-        context.log("Tentativo di ottenere il token per Microsoft Graph (scope: .default)...");
-        // Use the already obtained token instead of making a duplicate call
-        const graphToken = tokenResponse;
-
-        // Se arriviamo qui (improbabile dato l'errore attuale), il token è stato ottenuto
-        context.log("Token per Microsoft Graph ottenuto con successo tramite Managed Identity.");
-
-        // 3. Inizializza il client Microsoft Graph
-        const graphClient = Client.init({
-            authProvider: (done) => {
-                // Passa il token ottenuto al Graph Client
-                done(null, graphToken.token);
-            },
-        });
-        context.log("Client Microsoft Graph inizializzato.");
-
-        // 4. Chiama Microsoft Graph API per controllare i ruoli dell'utente loggato
-        context.log(`Controllo dei ruoli (transitiveMemberOf) per l'utente ID: ${userId}`);
-        // Usa l'endpoint corretto per ottenere i ruoli di directory transitivi
-        // Seleziona solo roleTemplateId per efficienza
-        const memberships = await graphClient
-            .api(`/users/${userId}/transitiveMemberOf/microsoft.graph.directoryRole`)
-            .select('roleTemplateId,displayName') // Aggiunto displayName per log più chiari
-            .get();
-
-        context.log(`Ottenuti ${memberships.value ? memberships.value.length : 0} ruoli di directory (transitivi).`);
-
-        // 5. Verifica se l'utente ha uno dei ruoli amministratore definiti
-        if (memberships && memberships.value) {
-            for (const role of memberships.value) {
-                // Confronto case-insensitive per sicurezza
-                if (role.roleTemplateId && adminRoleTemplateIds.includes(role.roleTemplateId.toLowerCase())) {
-                    isAdmin = true;
-                    context.log(`L'utente ${userDetails} (${userId}) è un amministratore. Trovato ruolo: ${role.displayName} (Template ID: ${role.roleTemplateId})`);
-                    break; // Trovato un ruolo admin, possiamo fermarci
-                }
-            }
-        }
-
-        if (!isAdmin) {
-             context.log(`L'utente ${userDetails} (${userId}) non ha nessuno dei ruoli amministratore specificati.`);
-        }
-
-        // 6. Restituisci il risultato
-        context.res = {
-            status: 200,
-            // Headers per evitare caching se necessario
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0'
-            },
-            body: {
-                isAdmin: isAdmin,
-                checkedUserId: userId, // Restituisci l'ID controllato per conferma
-                checkedUserDetails: userDetails
+        // 4. Inizializza il client Microsoft Graph con il token ottenuto
+        // Il client userà questa funzione per ottenere/rinfrescare il token quando necessario
+         const authProvider = {
+            getAccessToken: async () => {
+                // In uno scenario reale con chiamate multiple, potresti voler
+                // ri-ottenere il token qui se è vicino alla scadenza,
+                // ma per una singola chiamata, possiamo restituire quello appena ottenuto.
+                 // Se la chiamata precedente fallisce perché il token è scaduto nel frattempo,
+                 // potresti dover implementare una logica di retry qui.
+                context.log("Providing access token to Graph client.");
+                return tokenResponse.token;
             }
         };
 
-    } catch (error) {
-        context.log.error("ERRORE durante il controllo dello stato admin:", error);
-        // Logga dettagli specifici dell'errore che potrebbero essere utili
-        if (error.statusCode) context.log.error(`StatusCode: ${error.statusCode}`);
-        if (error.code) context.log.error(`Code: ${error.code}`);
-        if (error.requestId) context.log.error(`RequestId: ${error.requestId}`);
-        if (error.message) context.log.error(`Message: ${error.message}`);
-        // Logga lo stack trace completo per debug approfondito
-        if (error.stack) context.log.error(`Stack Trace: ${error.stack}`);
+        const graphClient = Client.initWithMiddleware({ authProvider: authProvider });
 
-        // Restituisci un errore 500 generico al client, i dettagli sono nei log lato server
+        // 5. Chiama l'API Graph per ottenere i ruoli di directory dell'utente
+        context.log(`Calling Graph API '/users/${userId}/transitiveMemberOf/microsoft.graph.directoryRole' to get directory roles...`);
+        // Usiamo transitiveMemberOf per ottenere anche i ruoli ereditati dai gruppi
+        // Selezioniamo solo i campi necessari
+        const roleMembership = await graphClient.api(`/users/${userId}/transitiveMemberOf/microsoft.graph.directoryRole`)
+            .select('id,displayName,roleTemplateId')
+            // Aumenta il timeout se necessario per chiamate Graph potenzialmente lente
+             // .timeout(15000) // Esempio: 15 secondi
+            .get();
+
+        context.log("Graph API call successful.");
+
+        // 6. Controlla se l'utente possiede uno dei ruoli amministratore specificati
+        if (roleMembership && roleMembership.value && roleMembership.value.length > 0) {
+            context.log(`User belongs to ${roleMembership.value.length} directory roles (or groups assigning roles). Checking against admin list...`);
+            isAdmin = roleMembership.value.some(role => {
+                context.log(`- Checking role: ${role.displayName} (Template ID: ${role.roleTemplateId})`);
+                return role.roleTemplateId && ADMIN_ROLE_TEMPLATE_IDS.includes(role.roleTemplateId.toLowerCase()); // Confronto case-insensitive per sicurezza
+            });
+        } else {
+            context.log("User does not belong to any directory roles directly or via group membership.");
+        }
+
+        context.log(`Admin status determined: ${isAdmin}`);
+
+        // 7. Restituisci il risultato
+        context.res = {
+            status: 200,
+            body: { isAdmin: isAdmin }
+        };
+
+    } catch (error) {
+        context.log.error("Error processing checkAdminStatus:");
+
+        // Logga l'errore specifico per il debug
+        // L'oggetto error può contenere più dettagli, specialmente se è un errore dalle librerie Azure
+        context.log.error(`Error Type: ${error.name}`);
+        context.log.error(`Error Message: ${error.message}`);
+        if (error.stack) {
+            context.log.error(`Stack Trace: ${error.stack}`);
+        }
+        // Errori specifici da @azure/identity o @microsoft/microsoft-graph-client potrebbero avere proprietà aggiuntive
+        if (error.statusCode) {
+             context.log.error(`Status Code: ${error.statusCode}`);
+        }
+         if (error.code) {
+             context.log.error(`Error Code: ${error.code}`);
+        }
+         if (error.requestId) {
+             context.log.error(`Request ID: ${error.requestId}`);
+        }
+        if (error.cause) {
+             context.log.error("Cause:", error.cause);
+        }
+        // Logga l'intero oggetto errore come JSON per ispezione, se utile
+        // Fai attenzione a non loggare informazioni sensibili contenute nell'errore!
+        try {
+            context.log.error("Full Error Object (JSON):", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
+         } catch (e) {
+           context.log.error("Could not stringify the full error object.");
+        }
+
+
         context.res = {
             status: 500,
-            body: {
-                message: "Errore interno del server durante la verifica dello stato amministratore.",
-                // Potresti voler includere l'error.message qui SOLO durante lo sviluppo per debug facilitato
-                // error_details: error.message
-            }
+            // Fornisci un messaggio generico al client, ma logga i dettagli internamente
+            body: { message: "Errore interno del server durante la verifica dello stato amministratore." }
         };
     }
 };
