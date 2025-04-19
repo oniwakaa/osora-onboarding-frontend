@@ -20,6 +20,8 @@ const ADMIN_ROLE_TEMPLATE_IDS = [
     // Aggiungi altri ID Template se necessario
 ];
 
+const managedIdentityClientId = "1877d094-1a3c-4efc-bdfd-4c894cfa2a53";
+
 
 module.exports = async function (context, req) {
     context.log('checkAdminStatus: Function processed request.');
@@ -32,39 +34,40 @@ module.exports = async function (context, req) {
         try {
             const decodedBuffer = Buffer.from(clientPrincipalHeader, 'base64');
             const clientPrincipal = JSON.parse(decodedBuffer.toString('utf-8'));
-            const userId = clientPrincipal.userId; // ID Oggetto dell'utente loggato
+            const userId = clientPrincipal.userId;
 
             context.log('checkAdminStatus: Checking roles for userId:', userId);
 
-            if (userId) {
-                // 1. Ottieni un token per Graph API usando la Managed Identity della Function App
-                // DefaultAzureCredential proverà diverse strategie (incl. Managed Identity)
-                const credential = new DefaultAzureCredential();
+            if (userId && managedIdentityClientId && managedIdentityClientId !== "CLIENT_ID_DELLA_TUA_IDENTITA_GESTITÀ") { // Aggiunto controllo su placeholder
+                context.log(`Attempting to get Graph token using explicit MI Client ID: ${managedIdentityClientId}`);
+                // 1. Crea le credenziali specificando l'ID Cliente della MI
+                const credential = new DefaultAzureCredential({
+                    managedIdentityClientId: managedIdentityClientId // <-- MODIFICA CHIAVE
+                });
+                // 2. Ottieni il token per Graph API
                 const graphToken = await credential.getToken("https://graph.microsoft.com/.default");
 
                 if (!graphToken || !graphToken.token) {
-                    throw new Error("Failed to acquire token for Graph API using Managed Identity.");
+                    throw new Error("Failed to acquire token for Graph API using specified Managed Identity Client ID.");
                 }
+                context.log('checkAdminStatus: Graph token acquired successfully.');
 
-                // 2. Inizializza il client Graph
+                // 3. Inizializza Graph Client (come prima)
                 const graphClient = Client.init({
                     authProvider: (done) => {
-                        done(null, graphToken.token); // Passa il token ottenuto
+                        done(null, graphToken.token);
                     },
                 });
 
-                // 3. Chiama Graph API per ottenere i ruoli di directory dell'utente
-                // Usiamo transitiveMemberOf per ottenere i ruoli diretti e ereditati (tramite gruppi)
-                // e filtriamo per il tipo microsoft.graph.directoryRole
-                // Selezioniamo roleTemplateId che è consistente tra i tenant
+                // 4. Chiama Graph API per i ruoli (come prima)
+                context.log('checkAdminStatus: Calling Graph API for roles...');
                 const directoryRoles = await graphClient
                     .api(`/users/${userId}/transitiveMemberOf/microsoft.graph.directoryRole`)
-                    .select('roleTemplateId') // Seleziona solo il campo che ci serve
+                    .select('roleTemplateId')
                     .get();
-
                 context.log('checkAdminStatus: Roles from Graph API:', JSON.stringify(directoryRoles));
 
-                // 4. Controlla se l'utente ha uno dei ruoli admin richiesti (basato su ID Template)
+                // 5. Controlla i ruoli (come prima)
                 if (directoryRoles && directoryRoles.value && Array.isArray(directoryRoles.value)) {
                     isAdmin = directoryRoles.value.some(role =>
                         role.roleTemplateId && ADMIN_ROLE_TEMPLATE_IDS.includes(role.roleTemplateId)
@@ -73,33 +76,34 @@ module.exports = async function (context, req) {
                 context.log(`checkAdminStatus: Admin check result based on Graph roles: ${isAdmin}`);
 
             } else {
-                context.log.warn("checkAdminStatus: userId not found in client principal.");
+                if (!userId) context.log.warn("checkAdminStatus: userId not found in client principal.");
+                if (!managedIdentityClientId || managedIdentityClientId === "CLIENT_ID_DELLA_TUA_IDENTITA_GESTITÀ") {
+                     context.log.error("checkAdminStatus: Managed Identity Client ID is missing or not replaced in code!");
+                     throw new Error("Managed Identity Client ID not configured in function code."); // Genera errore se l'ID non è stato inserito
+                }
             }
 
         } catch (error) {
-            context.log.error("checkAdminStatus: Error during Graph API call or processing:", error);
-            // Potresti voler restituire un errore 500 qui invece di isAdmin=false
-            // Ma per ora lo lasciamo false per semplicità
-            isAdmin = false;
-            // Restituisce l'errore specifico per diagnosi
-            context.res = {
-                status: 500,
-                headers: { 'Content-Type': 'application/json' },
-                body: { isAdmin: false, error: error.message }
-            };
-            return;
+             context.log.error("checkAdminStatus: Error during Graph API call or processing:", error);
+             context.res = {
+                 status: 500,
+                 headers: { 'Content-Type': 'application/json' },
+                 body: { isAdmin: false, error: error.message || "Unknown error during credential acquisition or Graph call." }
+             };
+             return;
         }
     } else {
+        // Questo caso non dovrebbe più accadere se l'autenticazione SWA funziona
         context.log.warn("checkAdminStatus: x-ms-client-principal header not found.");
         context.res = {
-            status: 401, // Unauthorized
+            status: 401,
             headers: { 'Content-Type': 'application/json' },
             body: { isAdmin: false, error: "Autenticazione richiesta." }
         };
         return;
     }
 
-    // Prepara la risposta JSON normale
+    // Risposta normale
     context.res = {
         headers: { 'Content-Type': 'application/json' },
         body: {
