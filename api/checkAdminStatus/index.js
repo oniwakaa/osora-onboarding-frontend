@@ -38,7 +38,7 @@ module.exports = async function (context, req) {
 
             context.log('checkAdminStatus: Checking roles for userId:', userId);
 
-            if (userId && managedIdentityClientId && managedIdentityClientId !== "CLIENT_ID_DELLA_TUA_IDENTITA_GESTITÀ") { // Aggiunto controllo su placeholder
+            if (userId && managedIdentityClientId && managedIdentityClientId !== "1877d094-1a3c-4efc-bdfd-4c894cfa2a53") { // Aggiunto controllo su placeholder
                 context.log(`Attempting to get Graph token using explicit MI Client ID: ${managedIdentityClientId}`);
                 // 1. Crea le credenziali specificando l'ID Cliente della MI
                 const credential = new DefaultAzureCredential({
@@ -77,7 +77,7 @@ module.exports = async function (context, req) {
 
             } else {
                 if (!userId) context.log.warn("checkAdminStatus: userId not found in client principal.");
-                if (!managedIdentityClientId || managedIdentityClientId === "CLIENT_ID_DELLA_TUA_IDENTITA_GESTITÀ") {
+                if (!managedIdentityClientId || managedIdentityClientId === "1877d094-1a3c-4efc-bdfd-4c894cfa2a53") {
                      context.log.error("checkAdminStatus: Managed Identity Client ID is missing or not replaced in code!");
                      throw new Error("Managed Identity Client ID not configured in function code."); // Genera errore se l'ID non è stato inserito
                 }
