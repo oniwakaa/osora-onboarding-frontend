@@ -1,6 +1,0 @@
-{
-  "dependencies": {
-    "@azure/identity": "^4.9.0",
-    "@microsoft/microsoft-graph-client": "^3.0.7"
-  }
-}

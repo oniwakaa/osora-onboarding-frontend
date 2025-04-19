@@ -1,0 +1,6 @@
+# Ignora node_modules nella cartella api
+api/node_modules/
+
+# Altre regole gitignore...
+.venv/
+*.sh
