@@ -1,5 +1,7 @@
 # Ignora node_modules nella cartella api
 api/node_modules/
+.cursor/rules/
+
 
 # Altre regole gitignore...
 .venv/
