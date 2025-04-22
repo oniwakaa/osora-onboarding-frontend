@@ -1,10 +1,12 @@
-// auth.js - Logica per onboarding.html
+// auth.js - Logica per onboarding.html con MSAL.js
 
 // Elementi UI
 const loadingStatusEl = document.getElementById('loadingStatus');
 const userEmailEl = document.getElementById('userEmail');
 const userProviderEl = document.getElementById('userProvider');
 const userIdEl = document.getElementById('userId');
+const displayTenantIdEl = document.getElementById('displayTenantId');
+const logoutButton = document.getElementById('logoutButton');
 const adminSectionEl = document.getElementById('adminSection');
 const adminStatusEl = document.getElementById('adminStatus');
 const consentAreaEl = document.getElementById('consentArea');
@@ -21,6 +23,41 @@ const generalMessageEl = document.getElementById('generalMessage');
 let currentUserInfo = null;
 let currentTenantId = null; // Memorizza l'ID tenant dopo il consenso
 
+// Configurazione MSAL 
+const msalConfig = {
+    auth: {
+        clientId: "9bf727de-528a-4c7b-9e44-c7505a8111d8", // Il tuo Client ID (TalentRecGraphConnector)
+        authority: "https://login.microsoftonline.com/organizations/", // Usa 'organizations' per multi-tenant
+        redirectUri: window.location.origin + "/onboarding.html", // URI dove tornare dopo login/token
+        postLogoutRedirectUri: window.location.origin // Dove andare dopo il logout
+    },
+    cache: {
+        cacheLocation: "sessionStorage", // O "localStorage"
+        storeAuthStateInCookie: false, // Imposta a true se hai problemi con ITP in Safari
+    },
+    system: {
+        loggerOptions: {
+            loggerCallback: (level, message, containsPii) => {
+                if (containsPii) { return; }
+                switch (level) {
+                    case msal.LogLevel.Error: console.error(message); return;
+                    case msal.LogLevel.Info: console.info(message); return;
+                    case msal.LogLevel.Verbose: console.debug(message); return;
+                    case msal.LogLevel.Warning: console.warn(message); return;
+                }
+            }
+        }
+    }
+};
+
+// Crea l'istanza di PublicClientApplication
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+// Scopes per l'ID token
+const loginRequest = {
+    scopes: ["openid", "profile", "email"]
+};
+
 // Funzione per mostrare messaggi generali
 function showGeneralMessage(message, isError = false) {
     generalMessageEl.textContent = message;
@@ -28,17 +65,119 @@ function showGeneralMessage(message, isError = false) {
     generalMessageEl.classList.remove('hidden');
 }
 
-// Funzione per aggiornare l'UI con le info utente
-function updateUserInfoUI(userInfo) {
-    if (userInfo && userInfo.clientPrincipal) {
-        currentUserInfo = userInfo.clientPrincipal; // Salva le info utente
-        loadingStatusEl.textContent = 'Caricato.';
-        userEmailEl.textContent = currentUserInfo.userDetails;
-        userProviderEl.textContent = currentUserInfo.identityProvider;
-        userIdEl.textContent = currentUserInfo.userId; // Questo è l'OID
+// Gestisci il flusso di login MSAL
+async function handleMsalAuth() {
+    console.log("Inizio gestione autenticazione MSAL");
+    
+    try {
+        // Gestisci eventuali risposte di redirect
+        const response = await msalInstance.handleRedirectPromise();
+        
+        if (response) {
+            // Utente è tornato da un redirect di autenticazione
+            console.log("Utente tornato da redirect di autenticazione", response);
+            handleSuccessfulToken(response);
+            return;
+        }
+        
+        // Controlla se ci sono account attivi
+        const accounts = msalInstance.getAllAccounts();
+        
+        if (accounts.length === 0) {
+            // Nessun account, avvia il login
+            console.log("Nessun account trovato, avvio login");
+            msalInstance.loginRedirect(loginRequest);
+            return;
+        }
+        
+        // Account trovato, imposta come attivo
+        console.log("Account trovato, imposto come attivo", accounts[0]);
+        msalInstance.setActiveAccount(accounts[0]);
+        
+        // Ottieni token silenziosamente
+        acquireTokenSilently();
+        
+    } catch (error) {
+        console.error("Errore durante gestione auth MSAL:", error);
+        showGeneralMessage(`Errore di autenticazione: ${error.message}`, true);
+        loadingStatusEl.textContent = 'Errore di autenticazione.';
+    }
+}
+
+// Funzione per acquisire token silenziosamente
+async function acquireTokenSilently() {
+    try {
+        const tokenResponse = await msalInstance.acquireTokenSilent({
+            ...loginRequest,
+            account: msalInstance.getActiveAccount()
+        });
+        
+        handleSuccessfulToken(tokenResponse);
+    } catch (error) {
+        console.warn("Acquisizione token silenziosa fallita:", error);
+        
+        if (error instanceof msal.InteractionRequiredAuthError) {
+            // Serve interazione utente, avvia flusso interattivo
+            msalInstance.acquireTokenRedirect(loginRequest);
+        } else {
+            // Altro errore
+            showGeneralMessage(`Errore durante l'acquisizione del token: ${error.message}`, true);
+        }
+    }
+}
+
+// Gestisci token ricevuto con successo
+function handleSuccessfulToken(tokenResponse) {
+    console.log("Token acquisito con successo");
+    
+    // Estrai i claims dall'ID token
+    const claims = tokenResponse.idTokenClaims;
+    
+    // Estrai informazioni utente dai claims
+    const userId = claims.oid; // Object ID dell'utente
+    const tenantId = claims.tid; // Tenant ID
+    const userEmail = claims.preferred_username || claims.email;
+    const userName = claims.name;
+    
+    // Salva il tenantId globalmente
+    currentTenantId = tenantId;
+    
+    // Log per verifica
+    console.log("User OID:", userId);
+    console.log("Tenant ID:", tenantId);
+    console.log("User Email:", userEmail);
+    
+    // Aggiorna UI
+    loadingStatusEl.textContent = 'Caricato (MSAL).';
+    userEmailEl.textContent = userEmail;
+    userIdEl.textContent = userId;
+    displayTenantIdEl.textContent = tenantId;
+    userProviderEl.textContent = "aad (MSAL)";
+    
+    // Chiamata al backend per verifica admin
+    if (userId && tenantId) {
+        checkAdminStatus(userId, tenantId);
     } else {
-        loadingStatusEl.textContent = 'Informazioni utente non disponibili.';
-        showGeneralMessage('Impossibile recuperare le informazioni utente. Prova a fare logout e login.', true);
+        showGeneralMessage("Impossibile recuperare OID o TID utente dal token.", true);
+    }
+}
+
+// Logout MSAL
+function logoutMsal() {
+    console.log("Esecuzione logout MSAL");
+    
+    try {
+        const logoutRequest = {
+            account: msalInstance.getActiveAccount(),
+            postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri
+        };
+        
+        msalInstance.logoutRedirect(logoutRequest);
+    } catch (error) {
+        console.error("Errore durante il logout:", error);
+        showGeneralMessage("Errore durante il logout. Per favore riprova.", true);
+        // Fallback - reindirizza alla home page
+        window.location.href = "/";
     }
 }
 
@@ -58,13 +197,14 @@ async function callApi(endpoint) {
     }
 }
 
-// Funzione per verificare lo stato admin
-async function checkAdminStatus() {
+// Funzione per verificare lo stato admin con passaggio di userId e tenantId
+async function checkAdminStatus(userId, tenantId) {
     adminStatusEl.textContent = 'Verifica permessi amministratore in corso...';
     adminSectionEl.classList.remove('hidden'); // Mostra la sezione admin
 
     try {
-        const data = await callApi('/api/checkAdminStatus');
+        // Modifica la chiamata per includere userId e tenantId come parametri
+        const data = await callApi(`/api/checkAdminStatus?userId=${encodeURIComponent(userId)}&tenantId=${encodeURIComponent(tenantId)}`);
         console.log("Risposta checkAdminStatus:", data);
         if (data.isAdmin) {
             adminStatusEl.textContent = 'Sei riconosciuto come amministratore.';
@@ -126,7 +266,6 @@ function handlePostAdminCheck() {
     }
 }
 
-
 // Funzione per avviare il flusso di consenso amministratore
 function redirectToAdminConsent() {
     console.log("Avvio flusso consenso amministratore...");
@@ -156,6 +295,9 @@ function redirectToAdminConsent() {
 
 // Funzione per salvare la configurazione
 async function saveConfiguration() {
+    // Log per verificare che currentTenantId sia definito correttamente
+    console.log("saveConfiguration - usando currentTenantId:", currentTenantId);
+    
     const urls = sharepointUrlsEl.value.trim();
     if (!urls) {
         configSaveStatusEl.textContent = 'Per favore, inserisci almeno un URL SharePoint.';
@@ -206,34 +348,22 @@ async function saveConfiguration() {
     }
 }
 
-
 // --- Esecuzione all'avvio della pagina ---
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Recupera info utente
-    try {
-        const userInfo = await callApi('/.auth/me');
-        updateUserInfoUI(userInfo);
-
-        // 2. Se l'utente è autenticato, verifica lo stato admin
-        if (currentUserInfo) {
-            await checkAdminStatus();
-        } else {
-            // Se non ci sono info utente, non procedere con checkAdmin
-             adminSectionEl.classList.add('hidden');
-        }
-
-    } catch (error) {
-        loadingStatusEl.textContent = 'Errore nel caricamento.';
-        // L'errore dettagliato è già mostrato da callApi
-        adminSectionEl.classList.add('hidden');
+    // Gestisci autenticazione MSAL
+    await handleMsalAuth();
+    
+    // Aggiungi event listener ai pulsanti
+    if (logoutButton) {
+        logoutButton.addEventListener('click', logoutMsal);
     }
-
-    // 3. Aggiungi event listener ai pulsanti (solo se esistono)
+    
     if (consentButton) {
         consentButton.addEventListener('click', redirectToAdminConsent);
     }
-     if (saveConfigButton) {
+    
+    if (saveConfigButton) {
         saveConfigButton.addEventListener('click', saveConfiguration);
     }
 });

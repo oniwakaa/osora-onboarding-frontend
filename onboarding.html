@@ -6,6 +6,10 @@
     <title>Osora - Dashboard Onboarding</title>
     <script src="https://cdn.tailwindcss.com"></script>
      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <!-- MSAL.js library for Microsoft Authentication -->
+    <script src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js" 
+            integrity="sha384-o4ufwq3oKqc7IoCcR08YtZXmgOljhTggRwxP2CLbSqeXGtitAxwYaUln/05nJjit" 
+            crossorigin="anonymous"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         /* Stili per mostrare/nascondere elementi */
@@ -22,7 +26,8 @@
             <p>Email: <span id="userEmail">N/D</span></p>
             <p>Provider: <span id="userProvider">N/D</span></p>
             <p>ID Utente (OID): <span id="userId">N/D</span></p>
-             <p><a href="/.auth/logout" class="text-blue-600 hover:underline">Logout</a></p>
+            <p>Tenant ID: <span id="displayTenantId">N/D</span></p>
+            <p><a href="#" id="logoutButton" class="text-blue-600 hover:underline">Logout</a></p>
         </div>
 
         <div id="adminSection" class="hidden mb-6 p-4 border rounded-lg bg-blue-50">
