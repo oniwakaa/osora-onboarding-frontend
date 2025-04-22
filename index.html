@@ -1,15 +1,23 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <title>Onboarding App - Login</title>
-    </head>
-<body>
-    <h1>Benvenuto nell'Onboarding di Osora</h1>
-    <p>Accedi con il tuo account Amministratore Microsoft 365 per iniziare.</p>
-    <button onclick="location.href='/.auth/login/aad?post_login_redirect_uri=/onboarding.html'">Accedi con Account Microsoft 365 Admin</button>
-
-    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"
-        integrity="sha384-..." crossorigin="anonymous"></script>
-    <script src="auth.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Osora - Onboarding</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-md text-center">
+        <h1 class="text-2xl font-semibold mb-6">Benvenuto in Osora Onboarding</h1>
+        <p class="mb-6 text-gray-600">Accedi con il tuo account Microsoft per iniziare.</p>
+        <a href="/.auth/login/aad"
+           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 ease-in-out inline-block">
+            Login con Microsoft Entra ID
+        </a>
+    </div>
 </body>
 </html>

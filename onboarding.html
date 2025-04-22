@@ -1,157 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-    <title>Onboarding App - Step 1</title>
-    </head>
-<body>
-    <h1>Onboarding - Verifica Permessi</h1>
-    <div id="userInfo">
-        <p>Caricamento informazioni utente...</p>
-    </div>
-    <div id="content">
-        <p>Verifica del ruolo amministratore in corso... (Prossimo step)</p>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Osora - Dashboard Onboarding</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Stili per mostrare/nascondere elementi */
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <h1 class="text-2xl font-semibold mb-6">Dashboard Onboarding</h1>
+
+        <div id="userInfo" class="mb-6 p-4 border rounded-lg bg-gray-50">
+            <h2 class="text-lg font-semibold mb-2">Informazioni Utente</h2>
+            <p>Stato: <span id="loadingStatus">Caricamento...</span></p>
+            <p>Email: <span id="userEmail">N/D</span></p>
+            <p>Provider: <span id="userProvider">N/D</span></p>
+            <p>ID Utente (OID): <span id="userId">N/D</span></p>
+             <p><a href="/.auth/logout" class="text-blue-600 hover:underline">Logout</a></p>
+        </div>
+
+        <div id="adminSection" class="hidden mb-6 p-4 border rounded-lg bg-blue-50">
+            <h2 class="text-lg font-semibold mb-2">Azioni Amministratore</h2>
+            <p id="adminStatus" class="mb-4">Verifica permessi in corso...</p>
+
+            <div id="consentArea" class="hidden mb-4">
+                <p class="mb-2 text-sm text-gray-700">L'applicazione necessita dei permessi per accedere ai dati Microsoft 365 del tuo tenant.</p>
+                 <button id="consentButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                    Autorizza Accesso Dati Applicazione
+                </button>
+            </div>
+             <p id="consentStatus" class="mb-4 text-green-700 font-medium hidden">Consenso amministratore concesso per il tenant: <span id="tenantId"></span></p>
+
+            <div id="configArea" class="hidden">
+                <h3 class="text-md font-semibold mb-2">Configurazione Iniziale</h3>
+                <p class="mb-2 text-sm text-gray-700">Inserisci gli URL completi dei principali siti SharePoint da monitorare (uno per riga):</p>
+                <textarea id="sharepointUrls" rows="4" class="w-full p-2 border rounded-lg mb-3 focus:ring-blue-500 focus:border-blue-500" placeholder="https://tuotenant.sharepoint.com/sites/ProgettoX&#10;https://tuotenant.sharepoint.com/sites/Marketing"></textarea>
+                <button id="saveConfigButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                    Salva Configurazione
+                </button>
+                 <p id="configSaveStatus" class="mt-3 text-sm"></p>
+            </div>
+        </div>
+
+         <div id="generalMessage" class="mt-4 p-4 border rounded-lg bg-yellow-50 text-yellow-800 hidden"></div>
+
     </div>
 
-    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js" integrity="..." crossorigin="anonymous"></script>
     <script src="auth.js"></script>
-    <script>
-        // Variabile globale per tenantId (o recuperarlo diversamente)
-        let currentTenantId = null;
-        let currentUserDetails = null; // Per conservare i dettagli utente
-    
-        // Funzione per avviare il flusso di consenso amministratore (NON USA MSAL)
-        async function triggerAdminConsentFlow() {
-            console.log("Avvio flusso consenso amministratore...");
-    
-            // Assicurati di avere il tenantId (potrebbe essere stato recuperato da /.auth/me)
-            if (!currentTenantId) {
-                 console.error("Tenant ID non disponibile per il consenso.");
-                 alert("Impossibile determinare il Tenant ID per il consenso. Riprova ad accedere.");
-                 // Potresti provare a chiamare /.auth/me qui se necessario, ma idealmente è già stato fatto.
-                 return;
-            }
-    
-            const clientId = "9bf727de-528a-4c7b-9e44-c7505a8111d8"; // Client ID della tua App Registration
-            const redirectUri = window.location.origin + "/onboarding.html"; // Torna qui dopo consenso
-            const state = crypto.randomUUID();
-            sessionStorage.setItem('consentState', state); // Salva stato per verifica
-    
-            const consentUrl = `https://login.microsoftonline.com/<span class="math-inline">\{currentTenantId\}/adminconsent?client\_id\=</span>{clientId}&state=<span class="math-inline">\{state\}&redirect\_uri\=</span>{encodeURIComponent(redirectUri)}`;
-            console.log("Reindirizzamento a URL Consenso:", consentUrl);
-            window.location.href = consentUrl; // Reindirizza al consenso AAD
-        }
-    
-        // Funzione per recuperare e mostrare i dati utente da SWA
-        async function fetchAndDisplayUserInfo(userInfoDiv) {
-             try {
-                 console.log("Chiamata a /.auth/me per dettagli utente...");
-                 const meResponse = await fetch('/.auth/me'); // Endpoint SWA per info utente
-                 if (meResponse.ok) {
-                     const meData = await meResponse.json();
-                     console.log("Dati da /.auth/me:", meData);
-                     if (meData && meData.clientPrincipal) {
-                         currentUserDetails = meData.clientPrincipal; // Salva i dettagli
-                         userName = currentUserDetails.userDetails || 'Utente Sconosciuto';
-    
-                         // Tenta di estrarre il Tenant ID dalle claims (il formato può variare!)
-                         // Controlla prima se identityProvider è 'aad'
-                         if (currentUserDetails.identityProvider === 'aad' && currentUserDetails.claims) {
-                             const tenantClaim = currentUserDetails.claims.find(c => c.typ === 'http://schemas.microsoft.com/identity/claims/tenantid' || c.typ === 'tid');
-                             if (tenantClaim) {
-                                 currentTenantId = tenantClaim.val;
-                                 console.log("Tenant ID impostato da /.auth/me:", currentTenantId);
-                             } else {
-                                 console.warn("Claim TenantID (tid) non trovata tra le claims di /.auth/me.");
-                             }
-                         } else {
-                             console.warn("Provider non è AAD o claims non presenti in /.auth/me");
-                         }
-    
-                         userInfoDiv.innerHTML = `
-                             <p>Bentornato/a, ${userName}</p>
-                             <p>Provider: ${currentUserDetails.identityProvider}</p>
-                             <p>ID Utente: ${currentUserDetails.userId}</p>
-                             <p>Ruoli SWA Noti: ${currentUserDetails.userRoles.join(', ')}</p>
-                         `;
-                         return true; // Indica successo
-                     } else {
-                         userInfoDiv.innerHTML = `<p>Loggato (sessione SWA attiva), ma clientPrincipal mancante o invalido in /.auth/me.</p>`;
-                     }
-                 } else {
-                      userInfoDiv.innerHTML = `<p>Loggato (sessione SWA attiva), ma errore ${meResponse.status} nel recuperare /.auth/me.</p>`;
-                 }
-             } catch (meError) {
-                 console.error("Errore chiamando /.auth/me:", meError);
-                 userInfoDiv.innerHTML = `<p>Loggato (sessione SWA attiva), ma errore nel recuperare /.auth/me.</p>`;
-             }
-             return false; // Indica fallimento
-        }
-    
-    
-        // Esegui al caricamento completo del DOM della pagina
-        document.addEventListener('DOMContentLoaded', async () => {
-            console.log("onboarding.html DOMContentLoaded - Attempting check via SWA auth");
-            const userInfoDiv = document.getElementById('userInfo');
-            const contentDiv = document.getElementById('content');
-            userInfoDiv.innerHTML = `<p>Verifica sessione utente...</p>`;
-            contentDiv.innerHTML = ""; // Pulisce contenuto precedente
-    
-            // 1. Recupera e mostra info utente (e cerca di ottenere tenantId)
-            const userInfoSuccess = await fetchAndDisplayUserInfo(userInfoDiv);
-    
-            // Se non riusciamo a ottenere info utente, potrebbe esserci un problema di sessione SWA
-            if (!userInfoSuccess) {
-                 contentDiv.innerHTML = `<p style="color: red;">Impossibile verificare la sessione utente con la piattaforma. Prova a <a href="/.auth/login/aad?post_login_redirect_uri=/onboarding.html">rieseguire l'accesso</a>.</p>`;
-                 return;
-            }
-    
-            // 2. Chiama l'API per verificare se l'utente è admin
-            contentDiv.innerHTML = "<p>Verifica del ruolo amministratore in corso...</p>";
-            try {
-                console.log("Chiamata a /api/checkAdminStatus...");
-                const response = await fetch('/api/checkAdminStatus');
-                console.log("Risposta API checkAdminStatus ricevuta, Status:", response.status);
-    
-                // Se riceviamo 401 qui, significa che anche con l'auth SWA, l'header non viene iniettato
-                // o la funzione non è protetta correttamente.
-                if (response.status === 401) {
-                     console.error("API checkAdminStatus returned 401 DESPITE SWA session. Check function/route auth settings.");
-                     contentDiv.innerHTML = `<p style="color: red;">Errore di autorizzazione nel contattare l'API interna. Verifica la configurazione di autenticazione della Static Web App.</p>`;
-                     return;
-                }
-                 if (!response.ok) {
-                     let errorText = `Errore API checkAdminStatus: ${response.statusText}`;
-                     try { const errorBody = await response.text(); errorText += ` - ${errorBody}`; } catch(e) {}
-                     throw new Error(errorText);
-                }
-    
-                const adminCheckData = await response.json();
-                console.log("Dati API checkAdminStatus ricevuti:", adminCheckData);
-    
-                // 3. Aggiorna UI in base alla risposta isAdmin
-                contentDiv.innerHTML = ''; // Pulisce messaggio verifica
-                if (adminCheckData.isAdmin) {
-                    console.log("L'utente è un amministratore.");
-                    const consentButton = document.createElement('button');
-                    consentButton.id = 'consentButton';
-                    consentButton.textContent = 'Concedi Permessi Applicazione';
-                    consentButton.addEventListener('click', triggerAdminConsentFlow); // Usa la funzione definita sopra
-    
-                    const infoParagraph = document.createElement('p');
-                    infoParagraph.textContent = "Sei stato verificato come amministratore. Procedi per concedere i permessi richiesti all'applicazione.";
-                    contentDiv.appendChild(infoParagraph);
-                    contentDiv.appendChild(consentButton);
-                } else {
-                    console.log("L'utente NON è un amministratore.");
-                    contentDiv.innerHTML = `<p><strong>Privilegi Amministrativi Richiesti</strong></p><p>L'account con cui hai effettuato l'accesso non dispone dei privilegi amministrativi necessari...</p>`; // Messaggio standard
-                }
-    
-            } catch (error) {
-                console.error("Errore durante la chiamata a /api/checkAdminStatus o nell'aggiornamento UI:", error);
-                contentDiv.innerHTML = `<p style="color: red;">Si è verificato un errore durante la verifica dei permessi. Riprova più tardi. Dettagli: ${error.message}</p>`;
-            }
-        });
-    </script>
-    </script>
 </body>
 </html>
