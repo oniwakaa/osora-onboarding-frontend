@@ -22,6 +22,7 @@ const generalMessageEl = document.getElementById('generalMessage');
 // Variabili di stato
 let currentUserInfo = null;
 let currentTenantId = null; // Memorizza l'ID tenant dopo il consenso
+let currentUserEmail = null; // Memorizza l'email utente
 
 // Configurazione MSAL 
 const msalConfig = {
@@ -139,8 +140,9 @@ function handleSuccessfulToken(tokenResponse) {
     const userEmail = claims.preferred_username || claims.email;
     const userName = claims.name;
     
-    // Salva il tenantId globalmente
+    // Salva il tenantId e userEmail globalmente
     currentTenantId = tenantId;
+    currentUserEmail = userEmail; // Salva l'email utente globalmente
     
     // Log per verifica
     console.log("User OID:", userId);
@@ -297,6 +299,7 @@ function redirectToAdminConsent() {
 async function saveConfiguration() {
     // Log per verificare che currentTenantId sia definito correttamente
     console.log("saveConfiguration - usando currentTenantId:", currentTenantId);
+    console.log("saveConfiguration - usando currentUserEmail:", currentUserEmail);
     
     const urls = sharepointUrlsEl.value.trim();
     if (!urls) {
@@ -306,6 +309,11 @@ async function saveConfiguration() {
     }
     if (!currentTenantId) {
          configSaveStatusEl.textContent = 'ID Tenant non disponibile. Riprova il processo di consenso.';
+         configSaveStatusEl.className = 'mt-3 text-sm text-red-600';
+         return;
+    }
+    if (!currentUserEmail) {
+         configSaveStatusEl.textContent = 'Email utente non disponibile. Riprova il login.';
          configSaveStatusEl.className = 'mt-3 text-sm text-red-600';
          return;
     }
@@ -325,7 +333,8 @@ async function saveConfiguration() {
             },
             body: JSON.stringify({
                 tenantId: currentTenantId,
-                sharepointUrls: urlList
+                sharepointUrls: urlList,
+                userIdentifier: currentUserEmail // Aggiungi l'email come identificatore utente
             }),
         });
 
