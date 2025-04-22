@@ -1,0 +1,93 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+## Azure Integration Rules
+**Managed Identity Configuration**
+- Explicit client ID binding: `1877d094-1a3c-4efc-bdfd-4c894cfa2a53`
+- Graph API permissions scope: `https://graph.microsoft.com/.default`
+- Token caching strategy: LRU with 15min TTL
+
+**Authentication Flow**
+1. Frontend auth redirection to `/.auth/login/aad`
+2. Claims extraction via `x-ms-client-principal` header
+3. Managed identity activation sequence:
+```
+
+new DefaultAzureCredential({
+managedIdentityClientId: process.env.AZURE_CLIENT_ID,
+credentialChain: [
+new ManagedIdentityCredential(),
+new EnvironmentCredential()
+]
+})
+
+```
+
+**API Security Constraints**
+| Layer | Protection | SWA Specific |
+|-------|------------|--------------|
+| Transport | TLS 1.3 enforced | Automatic |
+| Auth | Role-based access control | Integrated provider |
+| Data | Key Vault encryption | Managed identity access |
+
+**Error Handling**
+- Retry policy: 3 attempts with exponential backoff
+- Circuit breaker: 5 failures/30s window
+- Fallback: Local dev credentials when `NODE_ENV=development`
+
+## Code Validation Rules
+**Graph API Calls**
+```
+
+interface GraphRequestParams {
+consistencyLevel: 'eventual';
+\$count: boolean;
+\$select: string[];
+}
+
+const DEFAULT_PARAMS: GraphRequestParams = {
+consistencyLevel: 'eventual',
+\$count: true,
+\$select: ['id', 'displayName', 'description']
+};
+
+```
+
+**Directory Role Check**
+```
+
+const ADMIN_ROLE_TEMPLATES = [
+'62e90394-69f5-4237-9190-012177145e10', // Global Administrator
+'f28a1f50-f6e7-4571-818b-6a12f2af6b6c' // Privileged Role Administrator
+];
+
+```
+
+## Infrastructure Guardrails
+1. **Environment Variables**
+```
+
+AZURE_CLIENT_ID=1877d094-1a3c-4efc-bdfd-4c894cfa2a53
+KEY_VAULT_NAME=talentrec-kv-prod
+GRAPH_API_VERSION=beta
+
+```
+2. **Dependency Control**
+- Whitelisted packages: `@azure/identity ^3.2.0`, `@microsoft/microsoft-graph-client ^3.0.0`
+- Security audit: `npm audit --production` in CI/CD
+
+## SWA-Functions Integration
+**Request Flow Validation**
+```
+
+sequenceDiagram
+Frontend->>+SWA: GET /api/checkAdminStatus
+SWA->>+Functions: Proxy request
+Functions->>+Managed Identity: Acquire token
+Managed Identity-->>-Functions: JWT
+Functions->>+Graph API: GET /users/{id}/memberOf
+Graph API-->>-Functions: Roles data
+Functions-->>-SWA: { isAdmin: boolean }
+SWA-->>-Frontend: Response
