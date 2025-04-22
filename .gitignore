@@ -1,8 +1,112 @@
-# Ignora node_modules nella cartella api
-api/node_modules/
-.cursor/rules/
+# .gitignore per il progetto Frontend Osora (Azure Static Web Apps)
 
+# === Dipendenze e Pacchetti ===
+# Ignora le dipendenze installate localmente (devono essere installate durante la build se necessario)
+node_modules/
+bower_components/
 
-# Altre regole gitignore...
+# === File di Log ===
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log.[0-9] # Log ruotati
+
+# === File di Ambiente e Configurazioni Locali ===
+# Non committare mai variabili d'ambiente o segreti locali!
+.env
+.env.*
+!.env.example # Non ignorare i file .env di esempio
+local.settings.json # Specifico per Azure Functions (non dovrebbe essere qui, ma per sicurezza)
+*.settings.local.json
+
+# === File di Build e Output ===
+# Cartelle comuni per output di build (se usi bundler come Webpack, Parcel, Vite, etc.)
+dist/
+build/
+out/
+public/ # A volte usato come output, verifica se contiene solo file generati
+.cache/
+.parcel-cache/
+.svelte-kit/
+.next/
+.nuxt/
+
+# === File Specifici del Sistema Operativo ===
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+
+# Linux
+*~
+
+# === File e Cartelle Specifiche di Editor/IDE ===
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Altri editor/IDE
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# === File di Test e Coverage ===
+# (Commenta/Decommenta se vuoi includere/escludere i test nel repo)
+# tests/
+coverage/
+.nyc_output/
+*.lcov
+
+# === File Specifici del Progetto/Utente ===
+# Regole specifiche menzionate dall'utente
+.cursor/rules/ # Cartella specifica dello strumento Cursor
+# *.sh # Decommenta SOLO se sei sicuro che NESSUNO script .sh debba essere nel repo
+
+# === Ambienti Virtuali Python (se presenti per errore/tooling) ===
 .venv/
-*.sh
+venv/
+ENV/
+env/
+venv.bak/
+env.bak/
+*.pyc
+__pycache__/
+
+# === Metadati Git ===
+# Non ignorare MAI il file .gitignore stesso!
+# .gitignore # <-- NON INCLUDERE QUESTA RIGA!
+
+# === Altro ===
+# File temporanei
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# File di configurazione specifici di alcuni tool
+.eslintcache
+.prettiercache
+.stylelintcache
+
+# File di dipendenze specifici (se non usi lock file)
+# yarn.lock # Mantieni se usi Yarn
+# pnpm-lock.yaml # Mantieni se usi PNPM
+# package-lock.json # MANTIENI SEMPRE se usi NPM
+
