@@ -1,0 +1,21 @@
+{
+    "name": "osora-onboarding-frontend",
+    "version": "1.0.0",
+    "description": "Frontend for Osora Onboarding",
+    "main": "index.html", 
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1",
+      "build": "echo \"No build step required for static files.\"" 
+    },
+    "repository": {
+      "type": "git",
+      "url": "git+https://github.com/oniwakaa/osora-onboarding-frontend.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "bugs": {
+      "url": "https://github.com/oniwakaa/osora-onboarding-frontend/issues"
+    },
+    "homepage": "https://github.com/oniwakaa/osora-onboarding-frontend#readme"
+  }
